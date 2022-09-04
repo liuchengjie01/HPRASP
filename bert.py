@@ -1,8 +1,8 @@
-from torch import nn
+import torch.nn as nn
 from transformers import BertModel
 
 
-class BertFilter(BertModel):
+class BertFilter(nn.Module):
     def __init__(self, config):
         super(BertFilter, self).__init__()
         self.bert = BertModel.from_pretrained(config.model_path)

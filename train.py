@@ -1,19 +1,19 @@
 import argparse
+import time
 
 import numpy as np
 import torch.nn.functional
 import torch.nn.functional as F
 from sklearn import metrics
-from torch.optim import Adam
 from tqdm import tqdm
-from transformers import BertTokenizer
+from transformers import BertTokenizer, AdamW
 
 import utils
 from bert import BertFilter
 from utils import load_data
 
 
-def train(model, config, tokenizer, dataloader, eval_dataloader):
+def train(model, config, dataloader, eval_dataloader):
     print("## Train Process..")
 
     param_optimizer = list(model.named_parameters())
@@ -22,50 +22,45 @@ def train(model, config, tokenizer, dataloader, eval_dataloader):
         {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
         {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}]
     # optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
-    optimizer = Adam(optimizer_grouped_parameters,
-                     lr=config.learning_rate,
-                     warmup=0.05,
-                     t_total=len(dataloader) * config.epochs)
+    optimizer = AdamW(optimizer_grouped_parameters,
+                      lr=config.lr_rate,
+                      correct_bias=True)
+    # t_total=len(dataloader) * config.epochs)
     dev_best_loss = float('inf')
     model.train()
+    start_time = time.time()
     for epoch in range(config.epochs):
-        print("## In epoch {0}", epoch + 1)
-        cur_batch = 0
+        print("## In epoch {0}".format(epoch + 1))
+        cur_batch = 1
         for i, data in enumerate(tqdm(dataloader)):
-            print("Length of batch: {0}\n", len(data))
-            inputs = {}
-            input_ids = []
-            attention_mask = []
-            token_type_ids = []
-            labels = []
-            for feature in data:
-                input_ids.append(feature.input_ids)
-                attention_mask.append(feature.input_mask)
-                token_type_ids.append(feature.segment_ids)
-                labels.append(feature.label)
-            inputs["input_ids"] = input_ids
-            inputs["attention_mask"] = attention_mask
-            inputs["token_type_ids"] = token_type_ids
+            # print("Length of batch: {0}\n".format(len(data)))
             # batch_size * num_labels
-            outputs = model(inputs)
+            labels = data["labels"]
+            # print(data["input_ids"])
+            outputs = model(data["input_ids"], data["token_type_ids"], data["attention_mask"])
             model.zero_grad()
             loss = F.cross_entropy(outputs, labels)
             loss.backward()
             optimizer.step()
             if cur_batch % 100 == 0:
-                golds = labels.cpu()
-                preds = torch.argmax(F.softmax(outputs))
+                print("## shape of output: {0}".format(outputs.shape))
+                golds = labels.cpu().numpy()
+                preds = torch.argmax(F.softmax(outputs, dim=1), dim=1).cpu().numpy()
+                print("shape: {0}, {1}".format(golds, preds))
                 train_acc = metrics.accuracy_score(golds, preds)
                 f1_score = metrics.f1_score(golds, preds)
                 train_pre = metrics.precision_score(golds, preds)
-                dev_acc, dev_loss = evaluate(model, config, tokenizer, eval_dataloader)
+                dev_acc, dev_loss = evaluate(model, eval_dataloader)
                 if dev_loss < dev_best_loss:
                     dev_best_loss = dev_loss
-                    model.save(model.state_dict(), config.save_path)
+                    torch.save(model.state_dict(), config.save_path)
                     print("## save model state...\n")
-                    print("Train Acc: {0}, Precision: {1}, F1_score: {2}..\n", train_acc, train_pre, f1_score)
+                    print("Train Acc: {0}, Precision: {1}, F1_score: {2}..\n".format(train_acc, train_pre, f1_score))
             cur_batch += 1
             model.train()
+    end_time = time.time()
+    print("## Start Time: {0}, End Time: {1}..".format(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time)), time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(end_time))))
+    print("Time Used: {0} h {1} min..".format(int((end_time-start_time)/3600), int(((end_time-start_time) % 3600)/60)))
 
 
 def evaluate(model, eval_dataloader):
@@ -76,26 +71,15 @@ def evaluate(model, eval_dataloader):
     total_preds = np.array([], dtype=int)
     with torch.no_grad():
         for eval_data in eval_dataloader:
-            inputs = {}
-            input_ids = []
-            attention_mask = []
-            token_type_ids = []
-            labels = []
-            for feature in eval_data:
-                input_ids.append(feature.input_ids)
-                attention_mask.append(feature.input_mask)
-                token_type_ids.append(feature.segment_ids)
-                labels.append(feature.label)
-            inputs["input_ids"] = input_ids
-            inputs["attention_mask"] = attention_mask
-            inputs["token_type_ids"] = token_type_ids
+            labels = eval_data["labels"]
             # batch_size * num_labels
-            outputs = model(inputs)
+            outputs = model(eval_data["input_ids"], eval_data["token_type_ids"], eval_data["attention_mask"])
             loss = F.cross_entropy(outputs, labels)
             total_loss += loss
             total_labels = np.append(total_labels, labels.cpu().numpy())
-            total_preds = np.append(total_preds, torch.argmax(F.softmax(outputs)))
+            total_preds = np.append(total_preds, torch.argmax(F.softmax(outputs, dim=1), dim=1).cpu().numpy())
     acc = metrics.accuracy_score(total_labels, total_preds)
+    print("## Evaluation Acc: {0}, Total Loss: {1}, batches: {2}..".format(acc, total_loss, len(eval_dataloader)))
     return acc, total_loss / len(eval_dataloader)
 
 
@@ -112,11 +96,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     config = utils.Config()
-
+    print("## Load model...")
     model = BertFilter(config)
 
     tokenizer = BertTokenizer.from_pretrained(config.model_path)
 
     train_data, eval_data = load_data(config, tokenizer)
 
-    train(model, config, tokenizer, train_data, eval_data)
+    train(model, config, train_data, eval_data)
