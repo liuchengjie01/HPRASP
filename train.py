@@ -2,7 +2,7 @@ import argparse
 import time
 
 import numpy as np
-import torch.nn.functional
+import torch
 import torch.nn.functional as F
 from sklearn import metrics
 from tqdm import tqdm
@@ -21,12 +21,12 @@ def train(model, config, dataloader, eval_dataloader):
     optimizer_grouped_parameters = [
         {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
         {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}]
-    # optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
     optimizer = AdamW(optimizer_grouped_parameters,
                       lr=config.lr_rate,
                       correct_bias=True)
     # t_total=len(dataloader) * config.epochs)
     dev_best_loss = float('inf')
+    model.to(config.device)
     model.train()
     start_time = time.time()
     for epoch in range(config.epochs):

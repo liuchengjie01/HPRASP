@@ -2,7 +2,7 @@ import os
 
 import torch.cuda
 from torch.utils.data import DataLoader, Dataset
-from transformers import BertTokenizer
+from transformers import BertTokenizer, BertConfig, PretrainedConfig
 
 
 class InputFeature(object):
@@ -24,7 +24,7 @@ class MyDataset(Dataset):
         return len(self.features)
 
 
-class Config(object):
+class Config(BertConfig):
     def __init__(self):
         self.epochs = 5
         self.hidden_size = 768
@@ -36,8 +36,11 @@ class Config(object):
         self.model_path = "models/bert-base-uncased"
         self.seed = 1
         self.lr_rate = 1e-5
-        self.device = torch.device('cuda: 0' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.num_labels = 2
+        self.lables = ['G', 'B']  # 0=Good 1=Bad
+        self.tokenizer_class = "bert-base-uncased"
+        self.task_specific_params = None
 
 
 def read_data(path):
@@ -87,10 +90,11 @@ def convert_example_to_feature(examples, tokenizer: BertTokenizer, max_seq_lengt
 
 def collate_func(batch):
     out = dict()
-    out["input_ids"] = torch.tensor([item.input_ids for item in batch], dtype=torch.long)
-    out["attention_mask"] = torch.tensor([item.input_mask for item in batch], dtype=torch.long)
-    out["token_type_ids"] = torch.tensor([item.segment_ids for item in batch],  dtype=torch.long)
-    out["labels"] = torch.tensor([item.label for item in batch], dtype=torch.long)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    out["input_ids"] = torch.tensor([item.input_ids for item in batch], dtype=torch.long, device=device)
+    out["attention_mask"] = torch.tensor([item.input_mask for item in batch], dtype=torch.long, device=device)
+    out["token_type_ids"] = torch.tensor([item.segment_ids for item in batch],  dtype=torch.long, device=device)
+    out["labels"] = torch.tensor([item.label for item in batch], dtype=torch.long, device=device)
     return out
 
 
