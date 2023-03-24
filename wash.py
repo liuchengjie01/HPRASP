@@ -22,3 +22,4 @@ csvfile.close()
 txtf.close()
 
 print(ycnt,lcnt)
+
