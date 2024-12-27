@@ -4,6 +4,8 @@ import xgboost as xgb
 import numpy as np
 import pandas as pd
 
+# def preproc(xg_train, xg_test, params):
+
 
 if __name__ == '__main__':
     # read data
@@ -44,7 +46,8 @@ if __name__ == '__main__':
         "max_depth": 6,
         "num_class": 3,
         "silent": 0,
-        "seed": random.randint(1, 100)
+        "seed": random.randint(1, 100),
+        "subsample": 0.7
     }
     watchlist = [(xg_train, 'train'), (xg_test, 'test')]
     num_round = 5
@@ -53,8 +56,12 @@ if __name__ == '__main__':
     bst = xgb.train(params, xg_train, num_round, watchlist)
     print(">> Train model done..")
 
+    print("train_x: {}, train_y: {}, test_x: {}, test_y: {}".format(train_x.shape, train_y.shape, test_x.shape, test_y.shape))
     # test
     pred = bst.predict(xg_test)
+    print(pred)
+    print("==========")
+    print(test_y)
     error_rate = np.sum(pred != test_y) / test_y.shape[0]
     print("precision: {}".format(error_rate))
     bst.save_model("models/xgb/xgb_v1.json")
